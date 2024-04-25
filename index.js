@@ -62,20 +62,24 @@ async function fetchCommits(page = 1) {
 async function processCommits(commits) {
   try {
     let newCommits = false;
+    const knownCommitIds = new Set(existingCommits.map(c => c.id));  // Create a set of known commit IDs for quick lookup
     commits.forEach(commit => {
-      if (!existingCommits.find(c => c.id === commit.id)) {
-        existingCommits.push(commit);
+      if (!knownCommitIds.has(commit.id)) {
+        existingCommits.push(commit);  // Add new commit
         newCommits = true;
-        sendCommitToDiscord(commit);
+        sendCommitToDiscord(commit);  // Send new commit to Discord
       }
     });
     if (newCommits) {
-      fs.writeFileSync(config.commitsFilePath, JSON.stringify(existingCommits, null, 2));
+      fs.writeFileSync(config.commitsFilePath, JSON.stringify(existingCommits, null, 2));  // Save updated commits to file
+    } else {
+      console.log('No new commits to add.');
     }
   } catch (error) {
     logError(error, 'processing new commits');
   }
 }
+
 
 async function sendCommitToDiscord(commit) {
   const webhookClient = new WebhookClient({ url: config.webhookUrl });
@@ -178,29 +182,13 @@ function resendCommit(commitId) {
 
 async function checkCommits() {
   try {
-    loadCommits();
-    const newCommits = await fetchCommits();
-    let hasNewCommits = false;
-
-    if (newCommits && newCommits.length > 0) {
-      newCommits.forEach(commit => {
-        if (!existingCommits.find(c => c.id === commit.id)) {
-          existingCommits.push(commit);
-          hasNewCommits = true;
-        }
-      });
-
-      if (hasNewCommits) {
-        fs.writeFileSync(config.commitsFilePath, JSON.stringify(existingCommits, null, 2));
-        newCommits.forEach(commit => {
-          sendCommitToDiscord(commit);
-        });
-      } else {
-        console.log('No new commits to add.');
-      }
+    loadCommits();  // Ensure the local commit list is loaded first
+    const newCommits = await fetchCommits();  // Fetch new commits from the API
+    if (newCommits.length > 0) {
+      processCommits(newCommits);  // Process any new commits
     }
   } catch (error) {
-    logError(error, 'checking and processing new commits');
+    logError(error, 'checking for new commits');
   }
 }
 
