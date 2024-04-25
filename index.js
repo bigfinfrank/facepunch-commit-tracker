@@ -4,6 +4,7 @@ const fs = require('fs');
 const config = require('./config.json');
 
 const baseUrl = `https://commits.facepunch.com/r/${config.repository}`;
+
 let existingCommits = [];
 
 
@@ -16,7 +17,7 @@ function logError(error, action) {
   ownerNotification.send({
     content: `<@!${config.ownerId}> An error was encountered when ${action}. Please check debug.log for more details.`,
     allowedMentions: { parse: ['users'] }
-  }).catch(err => console.error('Failed to notify owner:', err));
+  }).catch(err => logError(err, 'Failed to notify owner:'));
 }
 
 async function loadCommits() {
@@ -44,8 +45,8 @@ async function checkCommits() {
     if (newCommits && newCommits.length > 0) {
       processCommits(newCommits);
     }
-  } catch (error) {
-    logError(error, 'checking for new commits');
+  } catch (err) {
+    logError(err, 'checking for new commits');
   }
 }
 
@@ -53,8 +54,8 @@ async function fetchCommits(page = 1) {
   try {
     const response = await axios.get(`${baseUrl}?p=${page}&format=json`);
     return response.data.results;
-  } catch (error) {
-    logError(error, `fetching commits from page ${page}`);
+  } catch (err) {
+    logError(err, `fetching commits from page ${page}`);
     return [];
   }
 }
@@ -62,21 +63,21 @@ async function fetchCommits(page = 1) {
 async function processCommits(commits) {
   try {
     let newCommits = false;
-    const knownCommitIds = new Set(existingCommits.map(c => c.id));  // Create a set of known commit IDs for quick lookup
+    const knownCommitIds = new Set(existingCommits.map(c => c.id));
     commits.forEach(commit => {
       if (!knownCommitIds.has(commit.id)) {
-        existingCommits.push(commit);  // Add new commit
+        existingCommits.push(commit);
         newCommits = true;
-        sendCommitToDiscord(commit);  // Send new commit to Discord
+        sendCommitToDiscord(commit);
       }
     });
     if (newCommits) {
-      fs.writeFileSync(config.commitsFilePath, JSON.stringify(existingCommits, null, 2));  // Save updated commits to file
+      fs.writeFileSync(config.commitsFilePath, JSON.stringify(existingCommits, null, 2));
     } else {
       console.log('No new commits to add.');
     }
-  } catch (error) {
-    logError(error, 'processing new commits');
+  } catch (err) {
+    logError(err, 'processing new commits');
   }
 }
 
@@ -84,9 +85,8 @@ async function processCommits(commits) {
 async function sendCommitToDiscord(commit) {
   const webhookClient = new WebhookClient({ url: config.webhookUrl });
   const firstLine = commit.message.split('\n')[0];
-  const remainingText = commit.message.substring(firstLine.length).trim();
   const title = firstLine.length > 256 ? firstLine.substring(0, 253) + '...' : firstLine;
-  let description = remainingText;
+  let description = commit.message.substring(firstLine.length).trim();
 
   const branchUrl = `https://commits.facepunch.com/r/${commit.repo}/${encodeURIComponent(commit.branch)}`;
   const commitUrl = `https://commits.facepunch.com/${commit.id}`;
@@ -109,7 +109,7 @@ async function sendCommitToDiscord(commit) {
       iconURL: 'https://images.squarespace-cdn.com/content/v1/627cb6fa4355783e5e375440/c92dbe6c-2afa-457c-a6b3-e9e8847d4565/rust-logo.png'
     })
     .setTimestamp(new Date(commit.created))
-    .setColor(`#${[...commit.user.name].reduce((acc, char) => acc + char.charCodeAt(0), 0).toString(16).padStart(6, '0')}`);
+    .setColor(`#${Math.abs(commit.user.name.split('').reduce((acc, char) => acc * char.charCodeAt(0) + char.charCodeAt(0), 0)).toString(16).slice(0, 6).padEnd(6, '0')}`);
 
   mainEmbed.addFields({
     name: "Commit Details",
@@ -133,7 +133,7 @@ async function sendCommitToDiscord(commit) {
           .setTitle('Additional Image')
           .setURL(branchUrl)
           .setImage(url)
-          .setColor(`#${[...commit.user.name].reduce((acc, char) => acc + char.charCodeAt(0), 0).toString(16).padStart(6, '0')}`);
+          .setColor(`#${Math.abs(commit.user.name.split('').reduce((acc, char) => acc * char.charCodeAt(0) + char.charCodeAt(0), 0)).toString(16).slice(0, 6).padEnd(6, '0')}`);
         embeds.push(imageEmbed);
       }
       imageCount++;
@@ -144,18 +144,19 @@ async function sendCommitToDiscord(commit) {
 
   try {
     await webhookClient.send({
-      content: `New <@&${config.roleId}> commit by ${commit.user.name}, ${commit.message.split('\n')[0]}`,
+      content: isNaN(parseInt(commit.changeset)) ? `New obfuscated commit by ${commit.user.name}` : `New <@&${config.roleId}> by ${commit.user.name}, ${firstLine}`,
       username: commit.user.name,
-      avatarURL: commit.user.avatar,
+      avatarURL: avatarUrl,
       embeds: embeds,
       files: attachments,
       allowedMentions: { parse: ['roles'] }
     });
     console.log('Message sent successfully with', embeds.length, 'embeds and', attachments.length, 'attachments.');
   } catch (error) {
-    logError(error, 'processing new commits');
+    logError(error, 'sending commit to Discord');
   }
 }
+
 
 function resendCommit(commitId) {
   console.log("Attempting to resend commit ID:", commitId);
@@ -175,20 +176,20 @@ function resendCommit(commitId) {
     } else {
       console.log("Commits file not found.");
     }
-  } catch (error) {
-    logError(error, `resending commit ID ${commitId}`);
+  } catch (err) {
+    logError(err, `resending commit ID ${commitId}`);
   }
 }
 
 async function checkCommits() {
   try {
-    loadCommits();  // Ensure the local commit list is loaded first
-    const newCommits = await fetchCommits();  // Fetch new commits from the API
+    loadCommits();
+    const newCommits = await fetchCommits();
     if (newCommits.length > 0) {
-      processCommits(newCommits);  // Process any new commits
+      processCommits(newCommits);
     }
-  } catch (error) {
-    logError(error, 'checking for new commits');
+  } catch (err) {
+    logError(err, 'checking for new commits');
   }
 }
 
