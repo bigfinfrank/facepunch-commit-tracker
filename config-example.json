@@ -1,0 +1,8 @@
+{
+  "webhookUrl": "",
+  "repository": "rust_reboot",
+  "checkInterval": 600000,
+  "commitsFilePath": "./commits.json",
+  "roleId": "PUT YOUR ROLE ID WITHOUT THE <@&> HERE",
+  "ownerId": "PUT YOUR USER ID WITHOUT THE <@!> HERE"
+}
