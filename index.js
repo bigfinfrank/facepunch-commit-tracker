@@ -205,7 +205,8 @@ async function checkCommits() {
 }
 
 
-if (commitId) {
+if (process.argv.includes('--resend-commit')) {
+  const commitId = process.argv.find(arg => arg.startsWith('--resend-commit=')).split('=')[1];
   resendCommit(commitId);
 } else {
   setInterval(checkCommits, config.checkInterval);
